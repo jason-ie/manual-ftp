@@ -9,7 +9,6 @@
   "author": "Jason Ie",
   "license": "ISC",
   "dependencies": {
-    "ftp": "^0.3.10",
     "yargs": "^17.7.2"
   }
 }

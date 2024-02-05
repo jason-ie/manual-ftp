@@ -1,35 +1,17 @@
 # FTP Client Project
 
-## High-Level Approach
+This project involves developing a custom FTP client in Node.js, designed to perform basic file operations like listing directories, creating and removing directories, and uploading/downloading files without leveraging any third-party FTP libraries. This constraint significantly increased the project's complexity, requiring a deep dive into the FTP protocol and manual implementation of its command sequences for establishing control and data connections.
 
-This project involved developing a command-line FTP client capable of handling various operations such as listing directory contents, creating and removing directories, deleting files, and copying or moving files to and from an FTP server. The client was implemented in Node.js, leveraging modules like ftp, yargs, url, and fs to manage FTP connections, parse command-line arguments, handle URLs, and interact with the file system, respectively.
+## Challenges
 
-## Challenges Faced
-
-- **FTP Protocol Compliance**: Implementing and adhering to the exact specifications of FTP commands and responses was complex, especially handling various server response codes and multi-line replies.
-
-- **Error Handling**: Developing robust error handling mechanisms to manage network issues, permission errors, and unexpected server behavior required careful design and testing.
-
-- **Control and Data Connection Management**: Coordinating between the control channel for commands and the data channel for file transfers, particularly managing the setup and teardown of data connections, presented significant logistical challenges.
-
-- **Cross-Platform Compatibility**: Ensuring consistent file operations across different operating systems involved addressing differences in path handling, file permissions, and system commands.
-
-- **Efficiency in File Transfers**: Optimizing the transfer of large files demanded efficient data streaming and buffering techniques to balance speed with resource utilization.
+- FTP Protocol Implementation: Understanding and manually implementing the FTP protocol's nuances was a key challenge, given the project's restriction against using specialized FTP libraries.
+- Connection Handling: Developing robust logic for handling control and data connections, including entering passive mode and parsing server responses.
+- Error Handling: Ensuring comprehensive error handling to gracefully manage connection issues, file transfer failures, and unexpected server responses.
 
 ## Testing Overview
 
-Testing was conducted primarily through extensive use of console.log() statements to track the execution flow and outcomes of operations. This approach allowed for real-time debugging and verification of the client's functionality. Each operation was tested individually to ensure it performed as expected, with specific attention paid to edge cases and error handling. Testing involved both local files and directories, as well as interactions with a remote FTP server set up specifically for this project.
+Testing focused on verifying the correct implementation of FTP operations across various scenarios:
 
-# Design Decisions
-
-## Creating New Clients for Downloading and Uploading
-
-A key design decision was to create new FTP client instances for each download and upload operation within the copyFile function. This approach was chosen to ensure that each operation had a fresh, isolated FTP client context, minimizing the risk of state-related errors and allowing for more predictable behavior, especially in cases where multiple operations might be performed sequentially or concurrently.
-
-## Not Passing a Client Parameter into the copyFile Function
-
-Unlike other functions where a single, existing FTP client instance was passed as a parameter, the copyFile function was designed to instantiate its own clients for uploading or downloading as needed. This decision was based on the dual nature of the copyFile operation, which might need to interact with both the local filesystem and the remote FTP server within the same operation. By creating clients as needed within the function, it allowed for greater flexibility and separation of concerns, ensuring that each part of the copy operation could be handled optimally.
-
-## Conclusion
-
-This project provided a comprehensive learning experience in network programming, specifically in implementing a client for the FTP protocol. The challenges faced and the solutions developed have significantly contributed to a deeper understanding of networked application development, protocol implementation, and effective debugging and testing strategies.
+- Unit Testing: Mocking server responses to validate command parsing and response handling.
+- Integration Testing: Interacting with a test FTP server to confirm the correct execution of file operations and error management.
+- Manual Testing: Conducting real-world file operations to ensure reliability and stability under typical use cases.
