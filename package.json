@@ -1,0 +1,16 @@
+{
+  "name": "ftp-client",
+  "version": "1.0.0",
+  "description": "",
+  "main": "ftp.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jason Ie",
+  "license": "ISC",
+  "dependencies": {
+    "basic-ftp": "^5.0.4",
+    "ftp": "^0.3.10",
+    "yargs": "^17.7.2"
+  }
+}
