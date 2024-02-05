@@ -3,6 +3,7 @@ const net = require("net"); // Provides asynchronous network API for creating st
 const yargs = require("yargs"); // Easily parses arguments and handles command line arguments
 const url = require("url"); // Parses URLs
 const fs = require("fs"); // File system module for reading and writing files
+const { log } = require("console");
 
 // Parse command line arguments with yargs
 const argv = yargs
@@ -38,272 +39,299 @@ function parseURL(ftpUrl) {
   };
 }
 
-// Basic FTP client setup
-class FTPClient {
-  constructor() {
-    this.controlConnection = new net.Socket();
-  }
+// Function to log in to the FTP server
+function loginToFtp(client, user, password, callback) {
+  let loginSequence = [
+    `USER ${user}\r\n`, // Send username
+    `PASS ${password}\r\n`, // Send password
+  ];
 
-  connect({ host, port = 21, user, password }, onReady) {
-    this.controlConnection.connect(port, host, () => {
-      console.log("Connected to FTP server");
-      this.login(user, password, onReady);
-    });
+  let responseCount = 0;
 
-    this.controlConnection.on("data", (data) => {
-      console.log("SERVER:", data.toString());
-      // Handle server responses here
-    });
-  }
+  client.on("data", function (data) {
+    console.log("Response: " + data.toString());
+    responseCount++;
 
-  login(user, password, onReady) {
-    this.sendCommand(`USER ${user}`, (response) => {
-      if (response.startsWith("331")) {
-        // 331 User name okay, need password
-        this.sendCommand(`PASS ${password}`, (response) => {
-          if (response.startsWith("230")) {
-            // 230 User logged in, proceed
-            onReady();
-          }
-        });
-      }
-    });
-  }
-
-  sendCommand(command, callback) {
-    this.controlConnection.write(`${command}\r\n`, () => {
-      this.controlConnection.once("data", (data) => callback(data.toString()));
-    });
-  }
-
-  list(path, callback) {
-    // Send the PASV command to enter passive mode
-    this.sendCommand("PASV", (pasvResponse) => {
-      // Parse the response to get the IP address and port for the data connection
-      const pasvData = pasvResponse.match(/\(([^)]+)\)/)[1].split(",");
-      const dataHost = pasvData.slice(0, 4).join(".");
-      const dataPort =
-        parseInt(pasvData[4], 10) * 256 + parseInt(pasvData[5], 10);
-
-      // Establish a data connection on the provided port
-      const dataConnection = new net.Socket();
-      dataConnection.connect(dataPort, dataHost, () => {
-        // Once connected, send the LIST command over the control connection
-        this.sendCommand(`LIST ${path}`, () => {
-          // Ready to receive directory listing over the data connection
-        });
-      });
-
-      dataConnection.on("data", (data) => {
-        console.log("Directory listing:\n", data.toString());
-        // Close data connection once the listing is received
-        dataConnection.end();
-      });
-
-      dataConnection.on("end", () => {
-        callback(null, "Listing completed.");
-      });
-
-      dataConnection.on("error", (err) => {
-        console.error("Data connection error:", err.message);
-        callback(err);
-      });
-    });
-  }
-
-  mkdir(path, callback) {
-    this.sendCommand(`MKD ${path}`, (response) => {
-      if (response.startsWith("257")) {
-        callback(null, "Directory created successfully.");
-      } else {
-        callback(new Error("Failed to create directory."));
-      }
-    });
-  }
-
-  rmdir(path, callback) {
-    this.sendCommand(`RMD ${path}`, (response) => {
-      if (response.startsWith("250")) {
-        callback(null, "Directory removed successfully.");
-      } else {
-        callback(new Error("Failed to remove directory."));
-      }
-    });
-  }
-
-  rm(path, callback) {
-    this.sendCommand(`DELE ${path}`, (response) => {
-      if (response.startsWith("250")) {
-        callback(null, "File removed successfully.");
-      } else {
-        callback(new Error("Failed to remove file."));
-      }
-    });
-  }
-
-  // In your FTPClient class:
-
-  // Helper function to enter passive mode
-  _enterPassiveMode(callback) {
-    this.sendCommand("PASV", (response) => {
-      // Look for the 'Entering Passive Mode' response code and message
-      const pasvRegex =
-        /227 Entering Passive Mode \((\d+,\d+,\d+,\d+),(\d+),(\d+)\)/;
-      const result = pasvRegex.exec(response);
-
-      if (!result) {
-        callback(new Error("Failed to enter passive mode."));
-        return;
-      }
-
-      // Parse the IP address and port number for the data connection
-      const ipAddress = result[1].replace(/,/g, ".");
-      const portNumber =
-        parseInt(result[2], 10) * 256 + parseInt(result[3], 10);
-
-      // Establish a new socket connection for the data transfer
-      const dataConnection = new net.Socket();
-      dataConnection.on("connect", () => {
-        callback(null, dataConnection);
-      });
-      dataConnection.on("error", (err) => {
-        callback(err);
-      });
-
-      // Connect using the extracted IP address and port number
-      dataConnection.connect(portNumber, ipAddress);
-    });
-  }
-
-  // Helper function to download a file
-  _downloadFile(remotePath, localPath, callback) {
-    // First, enter passive mode to get the data connection details
-    this._enterPassiveMode((err, dataSocket) => {
-      if (err) {
-        callback(err);
-        return;
-      }
-
-      // Listen for the data connection to be ready to receive the file
-      dataSocket.on("data", (chunk) => {
-        fs.appendFileSync(localPath, chunk);
-      });
-
-      dataSocket.on("end", () => {
-        console.log("File download completed.");
-        callback(null);
-      });
-
-      dataSocket.on("error", (err) => {
-        console.error("Error during file download:", err.message);
-        callback(err);
-      });
-
-      // Inform the server to start the transfer
-      this.sendCommand(`RETR ${remotePath}`, (response) => {
-        // Parse the response for an FTP status code
-        const match = response.match(/^(\d{3})/);
-        if (match) {
-          const statusCode = parseInt(match[1], 10);
-
-          // Check if the status code indicates that the server is about to send the file
-          if (statusCode === 150) {
-            console.log("Starting file download...");
-            // The data will start flowing through the dataSocket.
-          } else {
-            // If the status code is not 150, something went wrong.
-            callback(
-              new Error(`Server responded with status code ${statusCode}`)
-            );
-          }
-        } else {
-          // If there's no match, the server's response was not recognized
-          callback(new Error("Unrecognized response from server"));
-        }
-      });
-    });
-  }
-
-  // Helper function to upload a file
-  _uploadFile(localPath, remotePath, callback) {
-    // First, enter passive mode to get the data connection details
-    this._enterPassiveMode((err, dataSocket) => {
-      if (err) {
-        callback(err);
-        return;
-      }
-
-      // Inform the server to start the transfer
-      this.sendCommand(`STOR ${remotePath}`, (response) => {
-        // The server should respond with a 150 status code if the file is okay to be sent
-        const match = response.match(/^150/);
-        if (match) {
-          // Start sending the file data through the data connection
-          const readStream = fs.createReadStream(localPath);
-
-          readStream.on("data", (chunk) => {
-            dataSocket.write(chunk);
-          });
-
-          readStream.on("end", () => {
-            dataSocket.end();
-          });
-
-          readStream.on("error", (err) => {
-            dataSocket.destroy();
-            callback(err);
-          });
-
-          dataSocket.on("close", (hadError) => {
-            if (!hadError) {
-              console.log("File upload completed.");
-              callback(null);
-            }
-          });
-
-          dataSocket.on("error", (err) => {
-            console.error("Data connection error:", err.message);
-            callback(err);
-          });
-        } else {
-          // If the status code is not 150, something went wrong
-          callback(new Error("Failed to start file upload."));
-        }
-      });
-    });
-  }
-
-  cp(source, destination, callback) {
-    if (this._isRemotePath(source) && !this._isRemotePath(destination)) {
-      // If the source is remote and the destination is local, download the file
-      this.downloadFile(source, destination, callback);
-    } else if (!this._isRemotePath(source) && this._isRemotePath(destination)) {
-      // If the source is local and the destination is remote, upload the file
-      this.uploadFile(source, destination, callback);
-    } else {
-      // This case should not happen based on your requirements
-      callback(new Error("Invalid source and destination paths."));
+    // After receiving the welcome message, send login commands
+    if (responseCount === 1) {
+      client.write(loginSequence[0]);
+    } else if (data.toString().startsWith("331")) {
+      // 331 response code means user OK, password required
+      client.write(loginSequence[1]);
+    } else if (data.toString().startsWith("230")) {
+      // 230 response code means logged in successfully
+      callback(null); // Logged in successfully
+    } else if (data.toString().startsWith("530")) {
+      // 530 response code means login authentication failed
+      callback(new Error("Login authentication failed"));
     }
-  }
+  });
 
-  mv(source, destination, callback) {
-    this.cp(source, destination, (err) => {
-      if (err) {
-        return callback(err);
+  client.connect(port, host, function () {
+    console.log(`Connected to FTP server: ${host}`);
+  });
+
+  client.on("error", function (err) {
+    console.log("Connection error: " + err.message);
+    callback(err);
+  });
+}
+
+// Function to establish a connection to the FTP server
+function connectToFtpServer(ftpUrl, callback) {
+  const { host, port, user, password } = parseURL(ftpUrl);
+
+  const client = new net.Socket();
+
+  loginToFtp(client, user, password, callback);
+}
+
+// Function to open a data connection and parse the response for PASV command
+function openDataConnection(client, callback) {
+  client.write("PASV\r\n");
+
+  client.once("data", function (data) {
+    const response = data.toString();
+    console.log("PASV Response: ", response);
+    if (response.startsWith("227")) {
+      const ipAndPort = response.match(/\(([^)]+)\)/)[1].split(",");
+      const ip = ipAndPort.slice(0, 4).join(".");
+      const port = (parseInt(ipAndPort[4]) << 8) + parseInt(ipAndPort[5]);
+      callback(null, { ip, port });
+    } else {
+      callback(new Error("Failed to enter passive mode"));
+    }
+  });
+}
+
+// Implement the ls command
+function handleLsCommand(ftpUrl) {
+  connectToFtpServer(ftpUrl, function (error) {
+    if (error) {
+      console.error("Failed to connect or log in:", error.message);
+      return;
+    }
+
+    openDataConnection(client, function (error, { ip, port }) {
+      if (error) {
+        console.error("Failed to open data connection:", error.message);
+        return;
       }
 
-      // If the source file is remote, delete it after copying
-      if (this._isRemotePath(source)) {
-        this.rm(source, callback);
-      } else {
-        // If the source file is local, delete the local file
-        fs.unlink(source, callback);
-      }
+      const dataClient = new net.Socket();
+      dataClient.connect(port, ip, function () {
+        console.log("Data connection established for LIST command");
+        client.write(`LIST ${parseURL(ftpUrl).path}\r\n`);
+      });
+
+      dataClient.on("data", function (data) {
+        console.log("Directory listing:\n", data.toString());
+        dataClient.end();
+      });
+
+      dataClient.on("end", function () {
+        console.log("Data connection closed");
+        client.end();
+      });
     });
+  });
+}
+
+// Implement mkdir command
+function handleMkdirCommand(ftpUrl) {
+  connectToFtpServer(ftpUrl, function (error, client) {
+    if (error) {
+      console.error("Failed to connect or log in:", error.message);
+      return;
+    }
+
+    client.write(`MKD ${parseURL(ftpUrl).path}\r\n`);
+
+    client.once("data", function (data) {
+      console.log("MKD Response: ", data.toString());
+      client.end();
+    });
+  });
+}
+
+// Implement rmdir command
+function handleRmdirCommand(ftpUrl) {
+  connectToFtpServer(ftpUrl, function (error, client) {
+    if (error) {
+      console.error("Failed to connect or log in:", error.message);
+      return;
+    }
+
+    client.write(`RMD ${parseURL(ftpUrl).path}\r\n`);
+
+    client.once("data", function (data) {
+      console.log("RMD Response: ", data.toString());
+      client.end();
+    });
+  });
+}
+
+// Implement rm command
+function handleRmCommand(ftpUrl) {
+  connectToFtpServer(ftpUrl, function (error, client) {
+    if (error) {
+      console.error("Failed to connect or log in:", error.message);
+      return;
+    }
+
+    client.write(`DELE ${parseURL(ftpUrl).path}\r\n`);
+
+    client.once("data", function (data) {
+      console.log("DELE Response: ", data.toString());
+      client.end();
+    });
+  });
+}
+
+// Function to download a file from remote FTP to local
+function downloadFileFromFtp(remoteUrl, localPath) {
+  connectToFtpServer(remoteUrl, function (error, client) {
+    if (error) {
+      console.error("Failed to connect or log in:", error.message);
+      return;
+    }
+
+    openDataConnection(client, function (error, { ip, port }) {
+      if (error) {
+        console.error("Failed to open data connection:", error.message);
+        client.end(); // Close control connection
+        return;
+      }
+
+      const dataClient = new net.Socket();
+
+      dataClient.connect(port, ip, function () {
+        console.log("Data connection established for RETR command");
+        client.write(`RETR ${parseURL(remoteUrl).path}\r\n`);
+      });
+
+      // Open a file stream to write the downloaded data
+      const fileStream = fs.createWriteStream(localPath);
+      dataClient.on("data", function (data) {
+        console.log("Receiving data...");
+        fileStream.write(data);
+      });
+
+      dataClient.on("end", function () {
+        console.log("File download completed.");
+        fileStream.end(); // Close the file stream
+        client.end(); // Close control connection
+      });
+
+      client.once("data", function (response) {
+        console.log("RETR Response: ", response.toString());
+        // Handle server response to the RETR command
+        if (!response.toString().startsWith("150")) {
+          console.error("Failed to start file transfer.");
+          fileStream.end(); // Ensure file stream is closed on error
+          dataClient.end(); // Close data connection on error
+        }
+      });
+    });
+  });
+}
+
+// Function to upload a file from local to remote FTP
+function uploadFileToFtp(localPath, remoteUrl) {
+  connectToFtpServer(remoteUrl, function (error, client) {
+    if (error) {
+      console.error("Failed to connect or log in:", error.message);
+      return;
+    }
+
+    openDataConnection(client, function (error, { ip, port }) {
+      if (error) {
+        console.error("Failed to open data connection:", error.message);
+        client.end(); // Close control connection
+        return;
+      }
+
+      const dataClient = new net.Socket();
+
+      // Once the data connection is established, send the STOR command
+      dataClient.connect(port, ip, function () {
+        console.log("Data connection established for STOR command");
+        client.write(`STOR ${parseURL(remoteUrl).path}\r\n`);
+      });
+
+      // Handle the server's response to the STOR command
+      client.once("data", function (response) {
+        console.log("STOR Response: ", response.toString());
+        if (response.toString().startsWith("150")) {
+          // Server is ready to receive the file data
+          fs.createReadStream(localPath)
+            .pipe(dataClient)
+            .on("finish", function () {
+              console.log("File upload completed.");
+              client.end(); // Close control connection after the upload is complete
+            });
+        } else {
+          console.error("Failed to start file transfer.");
+          dataClient.end(); // Close data connection on error
+        }
+      });
+    });
+  });
+}
+
+// Helper function for copying files
+function copyFile(source, destination, isMove = false) {
+  // Determine if source is remote
+  if (source.startsWith("ftp://")) {
+    // Handle download (remote to local)
+    // Similar to handleLsCommand, but use RETR and write file locally
+  } else if (destination.startsWith("ftp://")) {
+    // Handle upload (local to remote)
+    // Similar to handleLsCommand, but use STOR and read file locally
   }
 
-  // Utility function to check if a path is remote
-  _isRemotePath(path) {
-    return path.startsWith("ftp://");
+  // If isMove is true, delete the source file after successful transfer
+}
+
+// Modify the handleCpCommand to include the download functionality
+function handleCpCommand(source, destination) {
+  if (!source.startsWith("ftp://") && destination.startsWith("ftp://")) {
+    // Upload file from local path to FTP
+    uploadFileToFtp(source, destination);
+  } else if (source.startsWith("ftp://")) {
+    // Download functionality is already implemented
+    console.error("Download functionality is already implemented.");
+  } else {
+    console.error(
+      "Copy command currently supports only local-to-remote and remote-to-local copying."
+    );
   }
+}
+
+function handleMvCommand(source, destination) {
+  copyFile(source, destination, true);
+}
+
+switch (command) {
+  case "ls":
+    handleLsCommand(argv.url);
+    break;
+  case "mkdir":
+    handleMkdirCommand(argv.url);
+    break;
+  case "rmdir":
+    handleRmdirCommand(argv.url);
+    break;
+  case "rm":
+    handleRmCommand(argv.url);
+    break;
+  case "cp":
+    handleCpCommand(argv.source, argv.destination);
+    break;
+  case "mv":
+    handleMvCommand(argv.source, argv.destination);
+    break;
+  default:
+    console.log("Unknown command");
+    break;
 }

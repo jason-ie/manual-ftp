@@ -9,6 +9,7 @@
   "author": "Jason Ie",
   "license": "ISC",
   "dependencies": {
+    "net": "^1.0.2",
     "yargs": "^17.7.2"
   }
 }
