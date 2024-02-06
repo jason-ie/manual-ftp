@@ -1,6 +1,6 @@
 # FTP Client Project
 
-This project involves developing a custom FTP client in Node.js, designed to perform basic file operations like listing directories, creating and removing directories, and uploading/downloading files without leveraging any third-party FTP libraries. This constraint significantly increased the project's complexity, requiring a deep dive into the FTP protocol and manual implementation of its command sequences for establishing control and data connections.
+This project involves developing a custom FTP client in Node.js, designed to perform basic file operations like listing directories, creating and removing directories, and uploading/downloading files without leveraging any third-party FTP libraries. This constraint significantly increased the project's complexity, requiring a deep dive into the FTP protocol and manual implementation of its command sequences for establishing control and data connections. I previously completed this project with the use of remote npm libraries like "ftp" but used this version as a manual way to connect to an FTP server. 
 
 ## Challenges
 
