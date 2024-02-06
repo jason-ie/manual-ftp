@@ -245,10 +245,16 @@ function handleRmCommand(ftpUrl, callback) {
         if (data.toString().startsWith("250")) {
           // 250 response code means file deleted successfully
           console.log("File deleted successfully."); // Log the success message
-          callback(null);
+          if (typeof callback === "function") {
+            // Check if the callback is a function
+            callback(null);
+          }
         } else {
           console.error("Failed to delete file:", data.toString()); // Log the error
-          callback(new Error("Failed to delete file"));
+          if (typeof callback === "function") {
+            // Check if the callback is a function
+            callback(new Error("Failed to delete file"));
+          }
         }
         client.end();
       });
